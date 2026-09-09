@@ -1,0 +1,36 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test and cross-build
+        shell: bash
+        run: |
+          mkdir -p dist/windows-amd64
+          export GOWORK=off
+          go test -race ./...
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/windows-amd64/app-divert.exe ./cmd/app-divert
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Package and validate official WinDivert filters
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1
+          $env:GOWORK = 'off'
+          $env:APP_DIVERT_TEST_DLL_DIR = Join-Path $PWD 'dist/windows-amd64'
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

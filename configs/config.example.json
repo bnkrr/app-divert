@@ -1,0 +1,18 @@
+{
+  "apps": [
+    "Wow.exe",
+    "Wow-64.exe"
+  ],
+  "socks5": "127.0.0.1:1080",
+  "relay_port": 34010,
+  "connect_timeout_seconds": 10,
+  "max_connections": 4096,
+  "targets": [
+    {
+      "ports": [
+        "3724",
+        "8085"
+      ]
+    }
+  ]
+}
