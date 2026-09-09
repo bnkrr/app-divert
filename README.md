@@ -226,3 +226,7 @@ its LGPLv3 option; Go dependencies retain their BSD licenses. Third-party
 components are not relicensed under MIT. See the
 [third-party notices](THIRD_PARTY_NOTICES.md). The portable package includes
 the official WinDivert LICENSE/README and third-party notices.
+
+Embedded hosts can use `Options.Routes` to assign disjoint application groups
+and destination rules to separate TCP handlers within one interceptor. See
+[the library guide](docs/library.md#multiple-application-routes).

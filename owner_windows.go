@@ -46,7 +46,7 @@ func connectionOwner(key tuple) (uint32, error) {
 // SYN ownership still uses the full TCP tuple for every new connection.
 type processDecision struct {
 	handle  windows.Handle
-	matched bool
+	path    string
 	expires time.Time
 }
 type processMatcher struct {
@@ -59,13 +59,13 @@ type processMatcher struct {
 func newProcessMatcher(cfg Config) *processMatcher {
 	return &processMatcher{cfg: cfg, self: uint32(os.Getpid()), cache: make(map[uint32]processDecision)}
 }
-func (m *processMatcher) matches(key tuple) (bool, error) {
+func (m *processMatcher) matches(key tuple) (string, error) {
 	pid, err := connectionOwner(key)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if pid == m.self {
-		return false, nil
+		return "", nil
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -73,22 +73,22 @@ func (m *processMatcher) matches(key tuple) (bool, error) {
 	if cached, ok := m.cache[pid]; ok {
 		status, err := windows.WaitForSingleObject(cached.handle, 0)
 		if err == nil && status == uint32(windows.WAIT_TIMEOUT) && now.Before(cached.expires) {
-			return cached.matched, nil
+			return m.cfg.selectRoute(cached.path, key.remote), nil
 		}
 		windows.CloseHandle(cached.handle)
 		delete(m.cache, pid)
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, pid)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	name := make([]uint16, 32768)
 	size := uint32(len(name))
 	if err = windows.QueryFullProcessImageName(h, 0, &name[0], &size); err != nil {
 		windows.CloseHandle(h)
-		return false, err
+		return "", err
 	}
-	matched := m.cfg.matches(windows.UTF16ToString(name[:size]))
+	path := windows.UTF16ToString(name[:size])
 	if len(m.cache) >= 256 {
 		for pid, cached := range m.cache {
 			if !now.Before(cached.expires) {
@@ -98,11 +98,11 @@ func (m *processMatcher) matches(key tuple) (bool, error) {
 		}
 	}
 	if len(m.cache) < 256 {
-		m.cache[pid] = processDecision{h, matched, now.Add(time.Minute)}
+		m.cache[pid] = processDecision{h, path, now.Add(time.Minute)}
 	} else {
 		windows.CloseHandle(h)
 	}
-	return matched, nil
+	return m.cfg.selectRoute(path, key.remote), nil
 }
 func (m *processMatcher) close() {
 	m.mu.Lock()

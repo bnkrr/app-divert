@@ -76,8 +76,8 @@ func (p *Proxy) run(ctx context.Context) error {
 				go func() {
 					defer handlers.Done()
 					defer table.release(f)
-					logger.Printf("proxy %s -> %s", f.original.local, f.original.remote)
-					if err := p.handle(relayCtx, c, f.original.remote); err != nil && relayCtx.Err() == nil {
+					logger.Printf("proxy route=%s %s -> %s", f.route, f.original.local, f.original.remote)
+					if err := p.handleRoute(relayCtx, c, f.original.remote, f.route); err != nil && relayCtx.Err() == nil {
 						logger.Printf("closed %s: %v", f.original.remote, err)
 					}
 				}()

@@ -34,6 +34,11 @@ func TestWindowsKernelFilterExpressions(t *testing.T) {
 		many = append(many, fmt.Sprintf("2001:db8:%x::/48", i))
 	}
 	rules = append(rules, []TargetRule{{IPs: many}})
+	var split []TargetRule
+	for i := 0; i < 32; i++ {
+		split = append(split, TargetRule{IPs: many[2*i : 2*i+2]})
+	}
+	rules = append(rules, split)
 	for _, rules := range rules {
 		cfg, err := (Config{Apps: []string{"game.exe"}, SOCKS5: "127.0.0.1:1080", Targets: rules}).normalized(false)
 		if err != nil {

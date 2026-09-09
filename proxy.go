@@ -36,6 +36,9 @@ type Logger interface {
 
 // Options configures host integration; these settings are not read from JSON.
 type Options struct {
+	// Routes binds disjoint application groups to independent TCP handlers.
+	// When used, Config.Apps, Config.Targets, Config.SOCKS5 and Handler must be empty.
+	Routes []Route
 	// DLLDir is the trusted directory containing official WinDivert.dll and
 	// WinDivert64.sys. Empty uses the host executable's directory.
 	DLLDir string
@@ -59,10 +62,21 @@ type Proxy struct {
 // New validates configuration and copies Apps and Targets. It does not open sockets or load
 // the driver. The caller must not mutate their slices concurrently with New.
 func New(cfg Config, opts Options) (*Proxy, error) {
+	if len(opts.Routes) > 0 {
+		if len(cfg.Apps) > 0 || len(cfg.Targets) > 0 || cfg.SOCKS5 != "" || opts.Handler != nil {
+			return nil, errors.New("Routes cannot be combined with Apps, Targets, SOCKS5 or Handler")
+		}
+		var err error
+		cfg.routes, cfg.Apps, cfg.Targets, err = compileRoutes(opts.Routes)
+		if err != nil {
+			return nil, err
+		}
+		opts.Routes = nil // All selectors have been copied into the compiled configuration.
+	}
 	if opts.Handler != nil && cfg.SOCKS5 != "" {
 		return nil, errors.New("specify either SOCKS5 or Handler, not both")
 	}
-	cfg, err := cfg.normalized(opts.Handler != nil)
+	cfg, err := cfg.normalized(opts.Handler != nil || len(cfg.routes) > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +94,7 @@ func New(cfg Config, opts Options) (*Proxy, error) {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
 	}
-	if opts.Handler == nil {
+	if opts.Handler == nil && len(cfg.routes) == 0 {
 		opts.Handler = func(ctx context.Context, conn *net.TCPConn, target netip.AddrPort) error {
 			upstream, err := dialSOCKS(ctx, cfg.SOCKS5, target, time.Duration(cfg.ConnectTimeoutSeconds)*time.Second)
 			if err != nil {
@@ -115,8 +129,25 @@ func (p *Proxy) Run(ctx context.Context) error {
 }
 
 func (p *Proxy) handle(ctx context.Context, conn *net.TCPConn, target netip.AddrPort) error {
+	return p.handleRoute(ctx, conn, target, "default")
+}
+
+func (p *Proxy) handleRoute(ctx context.Context, conn *net.TCPConn, target netip.AddrPort, route string) error {
 	defer conn.Close()
-	if err := p.opts.Handler(ctx, conn, target); err != nil {
+	handler := p.opts.Handler
+	if len(p.cfg.routes) > 0 {
+		for _, r := range p.cfg.routes {
+			if r.name == route {
+				handler = r.handler
+				break
+			}
+		}
+	}
+	if handler == nil {
+		resetTCP(conn)
+		return errors.New("unknown connection route")
+	}
+	if err := handler(ctx, conn, target); err != nil {
 		resetTCP(conn)
 		return err
 	}

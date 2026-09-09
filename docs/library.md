@@ -142,3 +142,51 @@ can affect them under load, even with the direct fast path.
 
 The library does not provide statistics subscriptions, dynamic rule updates,
 or hot switching. It does not intercept DNS or UDP.
+
+## Multiple application routes
+
+Use one proxy with `Options.Routes` to bind independent application groups to
+handlers. Leave `Config.Apps`, `Config.Targets`, `Config.SOCKS5` and
+`Options.Handler` empty in this mode. Existing single-handler integrations and
+standalone CLI configurations continue to work unchanged.
+
+```go
+p, err := divert.New(divert.Config{}, divert.Options{
+    Routes: []divert.Route{
+        {
+            Name: "game-a",
+            Apps: []string{`C:\Games\A\Game.exe`},
+            Targets: []divert.TargetRule{{Ports: []string{"3724"}}},
+            Handler: forwardToUpstreamA,
+        },
+        {
+            Name: "game-b",
+            Apps: []string{`C:\Games\B\Game.exe`},
+            Targets: []divert.TargetRule{{Ports: []string{"8085"}}},
+            Handler: forwardToUpstreamB,
+        },
+    },
+})
+```
+
+The two forwarding functions have the existing `TCPHandler` signature and the
+same cancellation, half-close and connection ownership contract. They can close
+over different upstream settings. The library remains unaware of KCP, PSKs or
+any other upstream protocol. Route names must be unique and handlers nonnil.
+
+Executable selectors cannot overlap across routes: names are case-insensitive,
+slash direction is normalized, and a basename conflicts with any full-path
+selector for that basename. Different full paths to identically named binaries
+are allowed. Routes do not inherit or automatically include child processes.
+
+The kernel prefilter uses the union of target rules. After ownership lookup,
+the application's own targets are checked before modifying the SYN. Traffic
+excluded by that application's targets stays direct even if another route
+includes that destination. The selected route is retained with the connection;
+PID lookup is not repeated later to choose its handler. Process-handle caching
+retains the executable path, not a destination-specific routing decision.
+
+Application/target slices are copied at construction. At most 32 routes,
+32 aggregate target rules and 64 aggregate IP/port selectors are supported.
+An unrestricted route consumes one wildcard target rule. All routes share the
+relay listeners, connection limit and fail-open decision cache of one instance.

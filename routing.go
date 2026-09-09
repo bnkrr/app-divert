@@ -28,7 +28,7 @@ type packetRouter struct {
 	mu               sync.Mutex
 	cfg              Config
 	table            *flowTable
-	owner            func(tuple) (bool, error)
+	owner            func(tuple) (string, error)
 	inject           func([]byte, *address, bool)
 	direct           map[tuple]directDecision
 	pending          map[tuple]*ownerJob
@@ -40,7 +40,7 @@ type packetRouter struct {
 	fallbacks [5]uint64
 }
 
-func newPacketRouter(cfg Config, table *flowTable, owner func(tuple) (bool, error), inject func([]byte, *address, bool)) *packetRouter {
+func newPacketRouter(cfg Config, table *flowTable, owner func(tuple) (string, error), inject func([]byte, *address, bool)) *packetRouter {
 	return &packetRouter{cfg: cfg, table: table, owner: owner, inject: inject, direct: make(map[tuple]directDecision), pending: make(map[tuple]*ownerJob), jobs: make(chan *ownerJob, 256), limit: decisionLimit}
 }
 
@@ -131,7 +131,7 @@ func (r *packetRouter) resolve(job *ownerJob) {
 	if !active {
 		return
 	}
-	matched, err := r.owner(job.p.key)
+	route, err := r.owner(job.p.key)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending[job.p.key] != job {
@@ -148,11 +148,11 @@ func (r *packetRouter) resolve(job *ownerJob) {
 		r.release(job, now)
 		return
 	}
-	if !matched {
+	if route == "" {
 		r.release(job, now)
 		return
 	}
-	if _, err = r.table.add(job.p); err != nil {
+	if _, err = r.table.addRoute(job.p, route); err != nil {
 		r.fallbacks[3]++
 		r.release(job, now)
 		return

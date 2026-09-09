@@ -18,6 +18,7 @@ type Config struct {
 	Apps                  []string     `json:"apps"`
 	Targets               []TargetRule `json:"targets,omitempty"`
 	targets               targetSet
+	routes                []compiledRoute
 	SOCKS5                string `json:"socks5"`
 	RelayPort             uint16 `json:"relay_port"`
 	ConnectTimeoutSeconds int    `json:"connect_timeout_seconds"`

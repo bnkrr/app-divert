@@ -11,6 +11,7 @@ import (
 const retainClosed = 2 * time.Minute
 
 type flow struct {
+	route      string
 	original   tuple
 	translated uint16
 	seq        uint32
@@ -45,6 +46,10 @@ func (t *flowTable) expire(now time.Time) {
 	}
 }
 func (t *flowTable) add(p packet) (*flow, error) {
+	return t.addRoute(p, "default")
+}
+
+func (t *flowTable) addRoute(p packet, route string) (*flow, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.stopping {
@@ -69,7 +74,7 @@ func (t *flowTable) add(p packet) (*flow, error) {
 		if port == t.relay || t.used[port] {
 			continue
 		}
-		f := &flow{original: p.key, translated: port, seq: p.seq, expires: time.Now().Add(retainClosed)}
+		f := &flow{route: route, original: p.key, translated: port, seq: p.seq, expires: time.Now().Add(retainClosed)}
 		t.forward[p.key] = f
 		t.reverse[t.reverseKey(f)] = f
 		t.used[port] = true

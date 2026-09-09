@@ -220,15 +220,15 @@ func TestWindowsFailOpenE2E(t *testing.T) {
 					}
 				}
 			}
-			owner := func(tuple) (bool, error) {
+			owner := func(tuple) (string, error) {
 				if mode == "lookup-timeout" {
 					time.Sleep(150 * time.Millisecond)
-					return true, nil
+					return "default", nil
 				}
 				if mode == "mapping-full" {
-					return true, nil
+					return "default", nil
 				}
-				return false, fmt.Errorf("controlled owner lookup failure")
+				return "", fmt.Errorf("controlled owner lookup failure")
 			}
 			router := newPacketRouter(cfg, newFlowTable(cfg.RelayPort, 0), owner, inject)
 			if mode == "queue-full" {

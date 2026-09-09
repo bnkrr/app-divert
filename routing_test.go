@@ -21,7 +21,7 @@ func (s *packetSink) inject(raw []byte, _ *address, modified bool) {
 	s.raw = append(s.raw, append([]byte(nil), raw...))
 	s.modified = append(s.modified, modified)
 }
-func newTestRouter(t *testing.T, owner func(tuple) (bool, error)) (*packetRouter, *packetSink) {
+func newTestRouter(t *testing.T, owner func(tuple) (string, error)) (*packetRouter, *packetSink) {
 	t.Helper()
 	cfg, err := (Config{Apps: []string{"game.exe"}, SOCKS5: "127.0.0.1:1080", Targets: []TargetRule{{Ports: []string{"3724"}}}}).normalized(false)
 	if err != nil {
@@ -36,12 +36,12 @@ func newTestRouter(t *testing.T, owner func(tuple) (bool, error)) (*packetRouter
 func TestDirectDecisionsAndTupleReuse(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		var calls int
-		r, sink := newTestRouter(t, func(tuple) (bool, error) {
+		r, sink := newTestRouter(t, func(tuple) (string, error) {
 			calls++
 			if failed {
-				return false, errors.New("owner unavailable")
+				return "", errors.New("owner unavailable")
 			}
-			return false, nil
+			return "", nil
 		})
 		p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 		original := append([]byte(nil), p.raw...)
@@ -74,7 +74,7 @@ func TestDirectDecisionsAndTupleReuse(t *testing.T) {
 
 func TestQueueFullAndMappingFailurePassDirect(t *testing.T) {
 	for _, queueFull := range []bool{false, true} {
-		r, sink := newTestRouter(t, func(tuple) (bool, error) { return true, nil })
+		r, sink := newTestRouter(t, func(tuple) (string, error) { return "default", nil })
 		if queueFull {
 			r.jobs = make(chan *ownerJob)
 		} else {
@@ -94,7 +94,7 @@ func TestQueueFullAndMappingFailurePassDirect(t *testing.T) {
 
 func TestLookupDeadlineIgnoresLateProxyResult(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
-	r, sink := newTestRouter(t, func(tuple) (bool, error) { close(entered); <-release; return true, nil })
+	r, sink := newTestRouter(t, func(tuple) (string, error) { close(entered); <-release; return "default", nil })
 	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 	r.process(p.raw, &address{})
 	job := <-r.jobs
@@ -112,7 +112,7 @@ func TestLookupDeadlineIgnoresLateProxyResult(t *testing.T) {
 }
 
 func TestScopeAndExistingPacketsSkipOwner(t *testing.T) {
-	r, sink := newTestRouter(t, func(tuple) (bool, error) { t.Error("unexpected owner lookup"); return false, nil })
+	r, sink := newTestRouter(t, func(tuple) (string, error) { t.Error("unexpected owner lookup"); return "", nil })
 	for _, target := range []string{"198.51.100.1:443", "127.0.0.1:3724", "[fe80::1]:3724"} {
 		local := "192.0.2.1:50000"
 		if target[0] == '[' {
@@ -131,7 +131,7 @@ func TestScopeAndExistingPacketsSkipOwner(t *testing.T) {
 
 func TestProxyAndReverseRelayStayMapped(t *testing.T) {
 	for _, v6 := range []bool{false, true} {
-		r, sink := newTestRouter(t, func(tuple) (bool, error) { return true, nil })
+		r, sink := newTestRouter(t, func(tuple) (string, error) { return "default", nil })
 		local, target := "192.0.2.1:50000", "198.51.100.1:3724"
 		if v6 {
 			local, target = "[2001:db8::1]:50000", "[2001:db8::2]:3724"
@@ -157,7 +157,7 @@ func TestProxyAndReverseRelayStayMapped(t *testing.T) {
 }
 
 func TestDecisionCapacityBypassesUntilRestart(t *testing.T) {
-	r, sink := newTestRouter(t, func(tuple) (bool, error) { return false, nil })
+	r, sink := newTestRouter(t, func(tuple) (string, error) { return "", nil })
 	r.limit = 1
 	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 	r.process(p.raw, &address{})
@@ -172,7 +172,7 @@ func TestDecisionCapacityBypassesUntilRestart(t *testing.T) {
 }
 
 func TestStopFlushesPendingAndRejectsLateDecisions(t *testing.T) {
-	r, sink := newTestRouter(t, func(tuple) (bool, error) { t.Error("lookup after stop"); return true, nil })
+	r, sink := newTestRouter(t, func(tuple) (string, error) { t.Error("lookup after stop"); return "default", nil })
 	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 	r.process(p.raw, &address{})
 	job := <-r.jobs
@@ -185,7 +185,7 @@ func TestStopFlushesPendingAndRejectsLateDecisions(t *testing.T) {
 }
 
 func TestPendingPacketPinsDirectBeforeLateResult(t *testing.T) {
-	r, sink := newTestRouter(t, func(tuple) (bool, error) { return true, nil })
+	r, sink := newTestRouter(t, func(tuple) (string, error) { return "default", nil })
 	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 	r.process(p.raw, &address{})
 	job := <-r.jobs
@@ -199,7 +199,7 @@ func TestPendingPacketPinsDirectBeforeLateResult(t *testing.T) {
 
 func TestConcurrentOwnerResultsAndShutdown(t *testing.T) {
 	var calls atomic.Int32
-	r, _ := newTestRouter(t, func(tuple) (bool, error) { calls.Add(1); return false, nil })
+	r, _ := newTestRouter(t, func(tuple) (string, error) { calls.Add(1); return "", nil })
 	var workers sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		workers.Add(1)
@@ -226,7 +226,7 @@ func TestConcurrentOwnerResultsAndShutdown(t *testing.T) {
 func BenchmarkDirectPacketPath(b *testing.B) {
 	cfg, _ := (Config{Apps: []string{"game.exe"}, SOCKS5: "127.0.0.1:1080"}).normalized(false)
 	calls := 0
-	r := newPacketRouter(cfg, newFlowTable(cfg.RelayPort, cfg.MaxConnections), func(tuple) (bool, error) { calls++; return false, nil }, func([]byte, *address, bool) {})
+	r := newPacketRouter(cfg, newFlowTable(cfg.RelayPort, cfg.MaxConnections), func(tuple) (string, error) { calls++; return "", nil }, func([]byte, *address, bool) {})
 	p := testPacket(b, "192.0.2.1:50000", "198.51.100.1:3724", 1)
 	addr := address{}
 	r.process(p.raw, &addr)
