@@ -64,6 +64,16 @@ func TestWindowsKernelFilterExpressions(t *testing.T) {
 			if (ok != 0) != cfg.targets.matches(p.key.remote) {
 				t.Fatalf("kernel/user scope mismatch: %s got=%v want=%v filter=%s", target, ok != 0, cfg.targets.matches(p.key.remote), cfg.packetFilter())
 			}
+			addr.Flags |= impostorFlag
+			ok, _, _ = evaluate.Call(uintptr(unsafe.Pointer(expression)), uintptr(unsafe.Pointer(&p.raw[0])), uintptr(len(p.raw)), uintptr(unsafe.Pointer(&addr)))
+			if (ok != 0) != cfg.targets.matches(p.key.remote) {
+				t.Fatal("reinjected forward packet excluded or escaped target scope")
+			}
+			addr.Flags |= 1 << 18 // loopback remains outside scope
+			ok, _, _ = evaluate.Call(uintptr(unsafe.Pointer(expression)), uintptr(unsafe.Pointer(&p.raw[0])), uintptr(len(p.raw)), uintptr(unsafe.Pointer(&addr)))
+			if ok != 0 {
+				t.Fatal("loopback packet captured")
+			}
 			addr.Flags = 0
 			ok, _, _ = evaluate.Call(uintptr(unsafe.Pointer(expression)), uintptr(unsafe.Pointer(&p.raw[0])), uintptr(len(p.raw)), uintptr(unsafe.Pointer(&addr)))
 			if ok != 0 {
@@ -79,6 +89,11 @@ func TestWindowsKernelFilterExpressions(t *testing.T) {
 			ok, _, _ := evaluate.Call(uintptr(unsafe.Pointer(expression)), uintptr(unsafe.Pointer(&p.raw[0])), uintptr(len(p.raw)), uintptr(unsafe.Pointer(&addr)))
 			if ok == 0 {
 				t.Fatal("relay return path excluded")
+			}
+			addr.Flags |= impostorFlag
+			ok, _, _ = evaluate.Call(uintptr(unsafe.Pointer(expression)), uintptr(unsafe.Pointer(&p.raw[0])), uintptr(len(p.raw)), uintptr(unsafe.Pointer(&addr)))
+			if ok == 0 {
+				t.Fatal("reinjected relay return path excluded")
 			}
 		}
 	}

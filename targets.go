@@ -147,5 +147,7 @@ func (s targetSet) matches(target netip.AddrPort) bool {
 func (c Config) packetFilter() string {
 	// Relay replies carry the original remote address but a translated destination
 	// port. They must reach the reverse map even when the target port is restricted.
-	return fmt.Sprintf("outbound and tcp and !loopback and !impostor and ((%s) or tcp.SrcPort == %d)", c.targets.filter, c.RelayPort)
+	// Other drivers may reinject packets after a connection is established.
+	// Those packets still need both directions of an existing NAT mapping.
+	return fmt.Sprintf("outbound and tcp and !loopback and ((%s) or tcp.SrcPort == %d)", c.targets.filter, c.RelayPort)
 }

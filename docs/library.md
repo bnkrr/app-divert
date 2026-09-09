@@ -125,6 +125,9 @@ original destination IPs/CIDRs and ports before process matching; see the
 [README](../README.md#destination-filters) for rule semantics and limits.
 Omitting it leaves destinations unrestricted. Relay return packets are also
 captured to maintain existing mappings.
+Packets marked as reinjected by another driver also retain existing mappings.
+An untracked reinjected SYN stays direct without owner lookup; its decision is
+cached so retransmissions cannot switch paths.
 
 Owner lookup failure, overload, or timeout allows a new connection to continue
 directly. The library records this decision before releasing the SYN; late

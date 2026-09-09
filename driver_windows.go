@@ -42,7 +42,8 @@ func openDriver(dir, expression string) (*driver, error) {
 		dll.Release()
 		return nil, err
 	}
-	// Loopback and packets injected by other drivers are explicitly outside scope.
+	// Loopback is outside scope. The router handles reinjected packets according
+	// to existing connection mappings before considering new owner lookups.
 	filter, _ := windows.BytePtrFromString(expression)
 	handle, _, err := open.Call(uintptr(unsafe.Pointer(filter)), 0, 0, 0)
 	if handle == ^uintptr(0) {

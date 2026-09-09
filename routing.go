@@ -104,6 +104,14 @@ func (r *packetRouter) process(raw []byte, addr *address) {
 		r.inject(raw, addr, false)
 		return
 	}
+	if addr.Flags&impostorFlag != 0 {
+		// A reinjected SYN cannot create a new proxy mapping. Remember its direct
+		// decision so an ordinary retransmission cannot splice it later. Packets
+		// belonging to our existing mappings have already been handled above.
+		r.direct[p.key] = directDecision{p.seq, now.Add(directIdleTimeout)}
+		r.inject(raw, addr, false)
+		return
+	}
 	copyPacket, _ := parsePacket(append([]byte(nil), raw...))
 	job := &ownerJob{p: copyPacket, addr: *addr, deadline: now.Add(ownerLookupTimeout)}
 	r.pending[p.key] = job

@@ -171,6 +171,53 @@ func TestDecisionCapacityBypassesUntilRestart(t *testing.T) {
 	}
 }
 
+func TestReinjectedPacketsKeepExistingMappings(t *testing.T) {
+	for _, ends := range [][2]string{{"192.0.2.1:50000", "198.51.100.1:3724"}, {"[2001:db8::1]:50000", "[2001:db8::2]:3724"}} {
+		calls := 0
+		r, sink := newTestRouter(t, func(tuple) (string, error) { calls++; return "default", nil })
+		syn := testPacket(t, ends[0], ends[1], 1)
+		original := syn.key
+		r.process(syn.raw, &address{Flags: outboundFlag})
+		r.resolve(<-r.jobs)
+		translated, _ := parsePacket(sink.raw[0])
+		for _, flags := range []byte{16, 24, 17, 20} { // ACK, data, FIN, RST
+			forward := testPacket(t, ends[0], ends[1], 2)
+			forward.raw[forward.tcp+13] = flags
+			r.process(forward.raw, &address{Flags: outboundFlag | impostorFlag})
+			got, _ := parsePacket(sink.raw[len(sink.raw)-1])
+			if got.key != translated.key || !sink.modified[len(sink.raw)-1] {
+				t.Fatalf("reinjected forward flags=%x lost mapping", flags)
+			}
+			reply := testPacket(t, translated.key.remote.String(), translated.key.local.String(), 90)
+			reply.raw[reply.tcp+13] = flags
+			r.process(reply.raw, &address{Flags: outboundFlag | impostorFlag})
+			got, _ = parsePacket(sink.raw[len(sink.raw)-1])
+			if got.key != (tuple{original.remote, original.local}) || !sink.modified[len(sink.raw)-1] {
+				t.Fatalf("reinjected reply flags=%x lost mapping", flags)
+			}
+		}
+		if calls != 1 || len(r.jobs) != 0 {
+			t.Fatal("established packets repeated owner lookup")
+		}
+	}
+}
+
+func TestUntrackedReinjectedSYNStaysDirect(t *testing.T) {
+	r, sink := newTestRouter(t, func(tuple) (string, error) { t.Error("unexpected owner lookup"); return "default", nil })
+	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)
+	original := append([]byte(nil), p.raw...)
+	r.process(p.raw, &address{Flags: outboundFlag | impostorFlag})
+	r.process(p.raw, &address{Flags: outboundFlag})
+	if len(r.jobs) != 0 || len(r.pending) != 0 || len(r.direct) != 1 || len(sink.raw) != 2 {
+		t.Fatal("reinjected SYN or its retransmission queued a lookup")
+	}
+	for i, raw := range sink.raw {
+		if sink.modified[i] || !bytes.Equal(raw, original) {
+			t.Fatal("untracked reinjected connection modified")
+		}
+	}
+}
+
 func TestStopFlushesPendingAndRejectsLateDecisions(t *testing.T) {
 	r, sink := newTestRouter(t, func(tuple) (string, error) { t.Error("lookup after stop"); return "default", nil })
 	p := testPacket(t, "192.0.2.1:50000", "198.51.100.1:3724", 1)

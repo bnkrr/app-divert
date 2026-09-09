@@ -15,4 +15,7 @@ var _ [unsafe.Sizeof(address{}) - 80]byte
 var _ [16 - unsafe.Offsetof(address{}.Data)]byte
 var _ [unsafe.Offsetof(address{}.Data) - 16]byte
 
-const outboundFlag uint32 = 1 << 17
+const (
+	outboundFlag uint32 = 1 << 17
+	impostorFlag uint32 = 1 << 19
+)

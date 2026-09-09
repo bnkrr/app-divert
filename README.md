@@ -145,6 +145,10 @@ Current behavior and limits:
   initial sequence triggers a new lookup. Unchanged packets are injected
   without checksum recalculation, process lookup, or per-packet logging.
   Fallback counts are logged at most once per second. DNS and UDP are unchanged.
+- Packets reinjected by other drivers still follow an existing proxy mapping
+  in both directions. An untracked reinjected SYN stays direct without a
+  process lookup; its retransmissions reuse that decision. WinDivert's
+  impostor marking is preserved for its injection loop protection.
 - Direct and pending decisions share a bounded 65,536-entry cache. If it fills,
   new connections remain direct until restart, preserving existing proxy maps.
   This avoids evicting a live direct decision and later redirecting its SYN
